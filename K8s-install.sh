@@ -1,83 +1,82 @@
 #!/bin/bash
-
-# Kubernetes Setup Script
-# This script performs the necessary setup steps to configure a Kubernetes cluster on Ubuntu nodes.
-# It includes disabling swap, updating the /etc/hosts file, configuring the IPV4 bridge, installing Docker,
-# and setting up Kubernetes components (kubelet, kubeadm, kubectl).
+# Run this script on ALL nodes (Master + Worker1 + Worker2)
 
 set -e
 
-# Step 1: Disable swap
-echo "Disabling swap..."
+echo "=================================================="
+echo "  Kubernetes Node Preparation Script"
+echo "=================================================="
+
+# Disable swap
+echo "[1/8] Disabling swap..."
 sudo swapoff -a
 sudo sed -i '/ swap / s/^/#/' /etc/fstab
 
-# Step 2: Update the /etc/hosts File for Hostname Resolution
-echo "Updating /etc/hosts for hostname resolution..."
-cat <<EOF | sudo tee -a /etc/hosts
-# Add your nodes' IP addresses and hostnames here
-10.128.0.24   master-node
-10.128.0.24   worker-node
-EOF
-
-# Step 3: Set up the IPV4 bridge on all nodes
-echo "Setting up IPV4 bridge..."
 # Load kernel modules
+echo "[2/8] Loading kernel modules..."
 cat <<EOF | sudo tee /etc/modules-load.d/k8s.conf
 overlay
 br_netfilter
 EOF
+
 sudo modprobe overlay
 sudo modprobe br_netfilter
 
-# Configure sysctl parameters
+# Set sysctl parameters
+echo "[3/8] Configuring sysctl parameters..."
 cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf
 net.bridge.bridge-nf-call-iptables  = 1
 net.bridge.bridge-nf-call-ip6tables = 1
 net.ipv4.ip_forward                 = 1
 EOF
 
-# Apply sysctl parameters without reboot
 sudo sysctl --system
 
-# Step 4: Install Docker
-echo "Installing Docker..."
-sudo apt update
-sudo apt install -y docker.io
-
-# Create containerd configuration directory and configure containerd
-sudo mkdir -p /etc/containerd
-sudo containerd config default | sudo tee /etc/containerd/config.toml > /dev/null
-sudo sed -i 's/ SystemdCgroup = false/ SystemdCgroup = true/' /etc/containerd/config.toml
-
-# Restart containerd and enable kubelet service
-sudo systemctl restart containerd.service
-
-# Step 5: Install kubelet, kubeadm, and kubectl on each node
-echo "Installing Kubernetes components (kubelet, kubeadm, kubectl)..."
+# Install dependencies
+echo "[4/8] Installing dependencies..."
 sudo apt-get update
-sudo apt-get install -y apt-transport-https ca-certificates curl gpg
+sudo apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
 
-# Create the keyrings directory if it doesn't exist
-sudo mkdir -p -m 755 /etc/apt/keyrings
+# Install containerd
+echo "[5/8] Installing containerd..."
+sudo apt-get install -y containerd
 
-# Download the Kubernetes package key and set up the repository
-curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+# Configure containerd
+sudo mkdir -p /etc/containerd
+containerd config default | sudo tee /etc/containerd/config.toml
 
-# Add the Kubernetes apt repository
-echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
+# Enable SystemdCgroup
+sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
 
-# Update the package list and install the Kubernetes components
+sudo systemctl restart containerd
+sudo systemctl enable containerd
+
+# Add Kubernetes repository
+echo "[6/8] Adding Kubernetes repository..."
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+# Install Kubernetes components
+echo "[7/8] Installing kubeadm, kubelet, and kubectl..."
 sudo apt-get update
 sudo apt-get install -y kubelet kubeadm kubectl
-
-# Hold the Kubernetes components to prevent them from being upgraded automatically
 sudo apt-mark hold kubelet kubeadm kubectl
 
-sudo systemctl restart kubelet.service
-sudo systemctl enable kubelet.service
+# Enable kubelet
+sudo systemctl enable kubelet
 
-# Enable and start kubelet
-sudo systemctl enable --now kubelet
+echo "[8/8] Verification..."
+kubeadm version
+kubelet --version
+kubectl version --client
 
-echo "Kubernetes setup completed successfully."
+echo "=================================================="
+echo "  ✅ Node preparation completed successfully!"
+echo "=================================================="
+echo ""
+echo "Next steps:"
+echo "  - If this is the MASTER node, run: 02-init-master.sh"
+echo "  - If this is a WORKER node, wait for master initialization"
+echo "=================================================="
