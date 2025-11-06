@@ -40,3 +40,18 @@ CNI Plugin: Using Flannel (simple & stable)
 Kubernetes version: v1.28 (stable, production-ready)
 
 This setup is production-tested and follows Kubernetes best practices. All scripts include error handling and clear output for troubleshooting. Your cluster will be fully functional for deploying applications, services, and managing workloads!
+
+If Using AWS/Cloud (I see Private IPs 172.31.x.x)
+This looks like AWS private IPs. You need to check Security Groups:
+
+Master Node Security Group must allow:
+
+Port 6443 (API Server) from Worker nodes
+Port 10250 (Kubelet) from all nodes
+Port 2379-2380 (etcd) from Master
+
+
+Worker Node Security Group must allow:
+
+All traffic FROM Master node
+Port 10250 from Master
